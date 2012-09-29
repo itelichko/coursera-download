@@ -2074,8 +2074,11 @@ class Config(object):
 
     CONFIG_FILE = 'download.cfg'
 
-    LOGIN_URL = 'https://www.coursera.org/maestro/api/user/login'
+    CSRF_URL = 'https://www.coursera.org/maestro/api/user/csrf_token'
     REDIRECT_URL = 'https://class.coursera.org/{0}/auth/auth_redirector?type=login&subtype=normal&email=&visiting=%2F{0}%2Flecture%2Findex&minimal=true'
+    LOGIN_URL = 'https://www.coursera.org/maestro/api/user/login'
+    LOGIN_REFERER = 'https://www.coursera.org/account/signin'
+    LOGIN_HOST = "www.coursera.org"
 
     def __init__(self):
         config = ConfigParser.ConfigParser()
@@ -2085,7 +2088,10 @@ class Config(object):
         self.course = config.get(Config.SECTION_DOWNLOAD, Config.SECTION_DOWNLOAD_CLASS)
         Config.course = self.course
         self.clazz = self.getJustClass(self.course)
+        self.csrfURL = Config.CSRF_URL
         self.loginURL = Config.LOGIN_URL
+        self.loginReferer = Config.LOGIN_REFERER
+        self.loginHost = Config.LOGIN_HOST
         self.redirectURL = Config.REDIRECT_URL.format(self.clazz)
 
     def getJustClass(self, courseURL):
@@ -2100,16 +2106,29 @@ class Downloader(object):
         cj = cookielib.CookieJar()
         opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
         self.opener = opener
-        self.login(config)
+        self.login(config, cj)
 
-    def login(self, config):
+    def login(self, config, cj):
+        self.opener.open(config.csrfURL)
+
         formParams = {
             'email_address': config.username,
             'password': config.password,
         }
 
-        formParams = urllib.urlencode(formParams)
+        csrftoken = ""
+        for index, cookie in enumerate(cj):
+            if cookie.name == 'csrftoken':
+                csrftoken = cookie.value
 
+        self.opener.addheaders = [
+            ('X-Requested-With', 'XMLHttpRequest'),
+            ('X-CSRFToken', csrftoken),
+            ('Referer', config.loginReferer),
+            ('Host', config.loginHost)
+        ]
+
+        formParams = urllib.urlencode(formParams)
         self.opener.open(config.loginURL, formParams)
 
     def getVideoListingPage(self, config):
